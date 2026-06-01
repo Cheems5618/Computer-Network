@@ -1,0 +1,102 @@
+\documentclass[12pt,a4paper]{ctexart}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{tcolorbox}
+\usepackage{xcolor}
+
+\title{零基础讲透网络与代理：结合实战案例分析}
+\author{写给小白的通俗指南}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{引言：把网络想象成“寄快递”}
+如果你没有计算机基础，不要害怕那些复杂的英文单词。整个计算机网络，其实就是一个\textbf{“寄快递”}的系统。
+你想看一个网页，就像是你要给别人寄一封信要点东西；数据包就是信件，路由器就是快递中转站。
+
+\section{第一部分：地址的秘密（什么是 IP 与 CIDR）}
+
+要送信，首先得知道门牌号。
+
+\subsection{1. 什么是 IP 地址？}
+IP 地址就像是现实生活中的\textbf{门牌号}。
+\begin{itemize}
+    \item \textbf{127.0.0.1（回环地址）}：这个地址永远代表\textbf{“我自己”}。就像你左手递东西给右手，不需要出门。
+    \item \textbf{192.168.x.x（局域网 IP）}：这是你家\textbf{“小区内部”}的门牌号。比如你家大模型服务是 192.168.5.9。在小区里面串门很快，但小区外面的人是找不到这个地址的。
+\end{itemize}
+
+\subsection{2. 什么是 CIDR（比如 /16）？}
+在网络配置中经常看到 \texttt{192.168.0.0/16}。这里的 \texttt{/16} 是什么意思？
+你可以把它理解为\textbf{“邮政编码”或者“小区统称”}。
+它规定了：“只要门牌号前两段是 192.168 的，都是同一个小区的！”
+当懂行的电脑看到目标地址是 \texttt{192.168.5.9} 时，它会通过二进制运算发现：它完全符合 \texttt{/16} 的要求，是自己人！
+
+\section{第二部分：快递代收点（什么是 Proxy 与环境变量）}
+
+\subsection{1. 什么是 Proxy (代理)？}
+Proxy 就是**“快递代收发站”**。
+当你没有代理时，你的电脑直接出门送信。当有了代理（比如 Clash），你会把信交给 Clash，Clash 帮你寄出国，收到回信再给你。
+
+\subsection{2. 什么是 http\_proxy 和 no\_proxy？}
+系统怎么知道要把信交代收发站呢？靠的是\textbf{环境变量}（相当于贴在你家门口的告示规则）：
+\begin{itemize}
+    \item \textbf{\texttt{http\_proxy}}：这写着“所有信，一律先交给 7890 号代收发站处理”。
+    \item \textbf{\texttt{no\_proxy}}：这是**白名单**。它写着“如果要寄给小区邻居（比如 192.168.0.0/16），就亲自去送，不要交给代收发站”。
+\end{itemize}
+
+\section{第三部分：案例现场破案（为什么信寄丢了）}
+
+了解了门牌号和代收发站，我们再来看你的报错日志，一切就真相大白了。
+
+\subsection{第一幕：发出去的信，石沉大海}
+\begin{tcolorbox}[colback=black!5!white,colframe=black!75!white,title=原始日志]
+\texttt{● Bash(curl -s http://192.168.5.9:3000/ 2>\&1 | head -50)} \\
+\texttt{  \_\_  (No output)}
+\end{tcolorbox}
+你雇佣了“\textbf{curl}”快递员去 192.168.5.9 要东西。结果他去了，却空着手回来了。
+
+\subsection{第二幕：监控发现信件被劫持，遭遇 502 错误}
+\begin{tcolorbox}[colback=black!5!white,colframe=black!75!white,title=原始日志]
+\texttt{* Uses proxy env variable http\_proxy == 'http://127.0.0.1:7890/'} \\
+\texttt{*   Trying 127.0.0.1:7890...} \\
+\texttt{< HTTP/1.1 502 Bad Gateway}
+\end{tcolorbox}
+
+\textbf{为什么流量被劫持了？}
+快递员 \texttt{curl} 出门前，主动看到了门口的告示（\texttt{http\_proxy}），于是非常顺从地把信交给了代收发站（Clash 的 7890 端口）。这不是抢劫，是应用层自愿的流量转交。
+
+\textbf{为什么是 502 Bad Gateway？}
+代收发站（Clash）拿着这封信，跑去国外的中转站找这个地址。可是国外根本找不到你小区的私有地址 \texttt{192.168.5.9}。于是代收发站只能把信退回来，并在信封上盖了个退件戳：\textbf{502 网关错误（我没坏，但上家连不上，查无此路）}。
+
+\subsection{第三幕：破案！死板的快递员与 CIDR 盲区}
+你明明在告示里写了白名单：\texttt{no\_proxy == '...192.168.0.0/16...'}，为什么还是交给了代收发站？
+
+\begin{tcolorbox}[colback=black!5!white,colframe=black!75!white,title=原始日志]
+\texttt{curl 7.81.0 (x86\_64-pc-linux-gnu)...}
+\end{tcolorbox}
+
+原因出在快递员身上。你雇佣的老版快递员（\texttt{curl 7.81.0}）文化程度太低。他不具备二进制计算能力，**看不懂 \texttt{/16} 代表“整个小区”**。
+他把目标地址 \texttt{192.168.5.9} 和纸条上的 \texttt{192.168.0.0/16} 做了个“大家找不同”，发现字长得完全不一样，于是死板地判定：**不在白名单内，交代收发站！**
+
+\subsection{大结局：下达死命令夺回控制}
+\begin{tcolorbox}[colback=black!5!white,colframe=black!75!white,title=原始日志]
+\texttt{● Bash(curl -s --noproxy '*' http://192.168.5.9:3000/ )}
+\end{tcolorbox}
+你终于受够了，揪着快递员耳朵下死命令（增加 \texttt{--noproxy '*'} 参数）：\textbf“不准看告示！不准交代收发站！亲自去敲门！”
+最终，快递绕开代理，成功拿到数据。
+
+\section{第四部分：遇到问题怎么解决（给小白的三招）}
+\begin{enumerate}
+    \item \textbf{查监控（\texttt{curl -v}）：} 永远先加 \texttt{-v}，看看信到底交没交给代收发站。
+    \item \textbf{防坑法（\texttt{--noproxy '*'}）：} 强制绕过代收发站，如果这样能通，百分之百是代理问题。
+    \item \textbf{终极一招（开启 TUN 模式）：} 在 Clash 中开启 TUN（虚拟网卡）模式。这就相当于修了自动传送带，不管快递员多笨，系统底层自动帮你分拣“内网直连”和“外网代理”，再也不会因为老版本不认 CIDR 而出错了。
+\end{enumerate}
+
+\end{document}
