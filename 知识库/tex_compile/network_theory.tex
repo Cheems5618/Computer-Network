@@ -292,44 +292,49 @@ curl --noproxy '*' http://你的目标网站.com
 \textbf{路由表（Routing Table）：}
 电脑内部有一个名叫“路由表”的门卫老大。每当你要寄一封信时，门卫老大就要决定：\textbf{“这封信，该从哪扇门丢出去？”}
 
-\subsection{2. 为什么开着 WiFi 就连不上机械臂？}
+\subsection{2. 为什么开着 WiFi 门卫就会“懵逼”？}
 
-\begin{tcolorbox}[colback=red!5,colframe=red!75!black,title=案情重演：门卫的懵逼瞬间,fonttitle=\bfseries,boxrule=0.5pt,arc=3mm]
-你对门卫说：“快！把指令发给机械臂（192.168.5.1）！” \\
-门卫看了一眼“无线门（WiFi）”，发现 WiFi 路由器在分配门牌号时，刚好也用的是 \texttt{192.168.5.x} 这个小区编号。 \\
-门卫又看了一眼“有线门（网线）”，这扇门也通往 \texttt{192.168.5.x} 小区。 \\
-门卫傻眼了：“两扇门外面都是 192.168.5 小区，我到底该走哪扇门？” \\
-在极度混乱中，门卫往往会优先选择“无线门”（因为你可能设置了 WiFi 是默认首选），结果信寄到了 WiFi 网络里，自然找不到那台孤零零插在网线上的机械臂！
+分析你电脑底层的真实路由表：
+\begin{lstlisting}[style=terminal]
+$ ip addr
+2: enp3s0: <BROADCAST,MULTICAST,UP,LOWER_UP> ... state UP
+    inet6 fe80::d693:90ff:fe3d:c5b8/64 scope link 
+3: wlp0s20f3: <BROADCAST,MULTICAST,UP,LOWER_UP> ...
+    inet 192.168.8.9/24 ...
+
+$ ip route get 192.168.5.1
+192.168.5.1 via 198.18.0.2 dev Meta table 2022 src 198.18.0.1
+\end{lstlisting}
+
+\begin{tcolorbox}[colback=red!5,colframe=red!75!black,title=案发现场：门卫与 Clash 的连环套,fonttitle=\bfseries,boxrule=0.5pt,arc=3mm]
+通过你电脑的真实数据，我们发现了两个致命秘密：
+\begin{enumerate}
+    \item \textbf{有线网卡（enp3s0）根本没有 IPv4 地址！} 只有一串长长的 IPv6 地址。这意味着你的电脑在“有线门”上，连个合法的门牌号都没有！
+    \item \textbf{流量被 Clash TUN 彻底劫持！} 当你尝试访问机械臂（192.168.5.1）时，路由表显示它通过 \texttt{dev Meta} 发送。而 \texttt{Meta} 正是 Clash 开启的虚拟网卡！
+\end{enumerate}
 \end{tcolorbox}
 
-\textbf{除了“小区撞名（网段冲突）”，还有一个致命陷阱叫“默认网关（Default Gateway）”。}
-默认网关就是\textbf{“不知道去哪时，默认走的大门”}。
-如果你在配置网线门（有线网卡）的时候，不仅设置了 IP，还顺手把“默认网关”也填了。你的电脑就有了\textbf{两个默认大门}！电脑不仅连不上机械臂，甚至连上百度、聊微信都会卡住，因为门卫完全精神分裂了，不知道该把上网的信往哪个大门扔。
+\textbf{为什么必须关闭 WiFi 才能连上？}
+因为你的有线网卡没有配 IP，电脑认为自己和 \texttt{192.168.5.x} 网段“不熟”。此时只要开着 WiFi，所有的流量（包括找机械臂的信）都会无脑掉进 Clash 的虚拟地道（TUN 接口 \texttt{Meta}）里，被送往外网，机械臂当然不会有任何响应。
+当你关闭 WiFi 时，Clash 传送带和 WiFi 大门全部关闭，电脑在无路可走的情况下，才可能会尝试通过有线网卡进行最原始的广播寻找。
 
-\newpage
 \subsection{3. 终极解决办法（小白必看步骤）}
 
-要解决这个问题，你必须给门卫制定一条铁律：**“去远方上网走 WiFi，找局域网机械臂走网线！”**
+要解决这个问题，你根本不需要频繁开关 WiFi，只需要给你的有线网卡**配置一个静态 IP**。
 
-\textbf{第一步：避开小区撞名（修改网段）}
+打开你电脑的“网络适配器设置（选择有线网卡 enp3s0 的 IPv4 设置）”，手动填写以下参数：
 \begin{itemize}
-    \item 如果你的 WiFi 刚好也是 192.168.5.x 网段，请登录 WiFi 路由器，把它改成 192.168.1.x 或其他数字。
-    \item 这样，有线门专属于 192.168.5.x，WiFi 门专属于其他，门卫绝对不会认错门。
-\end{itemize}
-
-\textbf{第二步：严禁网线门抢戏（清空有线网卡的网关）}
-打开你电脑的“网络设配器设置（有线连接 IPv4）”，手动固定 IP：
-\begin{itemize}
-    \item \textbf{IP 地址：} 填入同一小区的任意地址，比如 \texttt{192.168.5.10}。
+    \item \textbf{IP 地址：} 填入与机械臂同小区的任意地址，比如 \texttt{192.168.5.10}。
     \item \textbf{子网掩码：} \texttt{255.255.255.0}（代表 /24 小区）。
-    \item \textbf{默认网关：} \textbf{必须留空！绝对不能填任何数字！} 
+    \item \textbf{默认网关：} \textbf{打死也不要填！留空！} 
     \item \textbf{DNS 服务器：} \textbf{留空！}
 \end{itemize}
 
-\begin{tcolorbox}[colback=green!5,colframe=green!75!black,title=为什么要把网关留空？,fonttitle=\bfseries,boxrule=0.5pt,arc=3mm]
-留空网关，就等于在网线门上贴了一张霸气的告示：
-\textbf{“此门专用于 192.168.5 小区内部通讯。任何人想去外网上网，都不准走这个门！”}
-这样一来，电脑遇到找百度、聊微信的信件，就会百分之百走 WiFi 门（因为 WiFi 会自动分配一个默认网关）；遇到找机械臂的信件，就会走网线门。双剑合璧，天下无敌！
+\begin{tcolorbox}[colback=green!5,colframe=green!75!black,title=为什么这样配就能解决？,fonttitle=\bfseries,boxrule=0.5pt,arc=3mm]
+一旦你给有线网卡配置了 \texttt{192.168.5.10}，电脑的路由表里就会瞬间生成一条高优先级的局部路由规则：
+\textbf{“凡是去往 192.168.5.x 小区的信，一律直接从有线网卡（enp3s0）扔出去！”} \\
+这条局部规则的优先级（掩码长度 /24）远远高于 Clash 传送带的默认全局规则（/0）。
+从此，即便你开着 WiFi、挂着 Clash，只要你访问 \texttt{192.168.5.1}，门卫老大也会雷厉风行地一脚把信踢进有线网线里，直达机械臂！而你的上网流量依然会快乐地走 WiFi 门。
 \end{tcolorbox}
 
 \newpage
