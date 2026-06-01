@@ -322,12 +322,43 @@ $ ip route get 192.168.5.1
 
 要解决这个问题，你根本不需要频繁开关 WiFi，只需要给你的有线网卡**配置一个静态 IP**。
 
-打开你电脑的“网络适配器设置（选择有线网卡 enp3s0 的 IPv4 设置）”，手动填写以下参数：
+\subsubsection{Linux 极客彩蛋：为什么我的系统设置里找不到「有线网络」？}
+很多 Ubuntu 用户会遇到一个神奇的现象：打开系统设置，在网络栏里**只能看到 VPN 和代理，根本没有「有线网络」这一栏**。
+
+分析你本机的系统配置文件：
+\begin{lstlisting}[style=terminal]
+$ cat /etc/network/interfaces
+auto enp3s0
+iface enp3s0 inet manual
+\end{lstlisting}
+
+\textbf{破案：网卡被其他管理员强占了！} \\
+因为你之前可能使用过拨号上网（宽带连接 \texttt{pppoeconf}），导致你的网卡 \texttt{enp3s0} 被写入了底层的 \texttt{/etc/network/interfaces} 配置文件中。 \\
+而在 Ubuntu 的图形网络管理器（NetworkManager）的配置中，有一行默认设定：\texttt{managed=false}（不托管由 interfaces 配置文件管理的网卡）。 \\
+因此，系统桌面认为这块网卡“不归我管”，所以在系统设置图形界面里直接**把它隐藏了**！
+
+\textbf{让「有线网络」重新在系统设置里显现的步骤：}
+\begin{enumerate}
+    \item \textbf{解除旧锁定：} 打开终端，编辑配置文件（需要管理员权限）：
+    \begin{lstlisting}[language=bash]
+    sudo nano /etc/network/interfaces
+    \end{lstlisting}
+    把关于 \texttt{enp3s0} 的两行（或者所有宽带拨号相关的行）前面**加上 \texttt{\#} 号进行注释**（或者直接删掉它们）。
+    \item \textbf{开启 NetworkManager 托管：} 编辑网络管理配置文件：
+    \begin{lstlisting}[language=bash]
+    sudo nano /etc/NetworkManager/NetworkManager.conf
+    \end{lstlisting}
+    找到 \texttt{[ifupdown]} 这一栏，把下面的 \texttt{managed=false} 改为 \textbf{\texttt{managed=true}}。
+    \item \textbf{重启网络服务：} 在终端输入命令重启服务：
+    \begin{lstlisting}[language=bash]
+    sudo systemctl restart NetworkManager
+    \end{lstlisting}
+\end{enumerate}
+现在，重新打开你的 Ubuntu 系统设置，你就会惊喜地发现**「有线网络」选项完美归位**！你可以直接用鼠标去点击它，手动填写静态 IP：
 \begin{itemize}
-    \item \textbf{IP 地址：} 填入与机械臂同小区的任意地址，比如 \texttt{192.168.5.10}。
-    \item \textbf{子网掩码：} \texttt{255.255.255.0}（代表 /24 小区）。
-    \item \textbf{默认网关：} \textbf{打死也不要填！留空！} 
-    \item \textbf{DNS 服务器：} \textbf{留空！}
+    \item \textbf{IP 地址：} \texttt{192.168.5.10}
+    \item \textbf{子网掩码：} \texttt{255.255.255.0}
+    \item \textbf{默认网关 / DNS：} \textbf{打死也不要填！留空！}
 \end{itemize}
 
 \begin{tcolorbox}[colback=green!5,colframe=green!75!black,title=为什么这样配就能解决？,fonttitle=\bfseries,boxrule=0.5pt,arc=3mm]
